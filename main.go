@@ -15,11 +15,9 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-var client mqtt.Client
-
 var lastCount = make(map[string]uint8)
 
-const topicPrefix = "/sensors/"
+var advertisingChannel = make(chan parsedAdv, 1024)
 
 type manufData struct {
 	ID          uint16
@@ -29,74 +27,89 @@ type manufData struct {
 	Counter     uint8
 }
 
+func (d *manufData) tempToFloat() float64 {
+	return float64(d.Temperature) / 1000.0
+}
+
+type parsedAdv struct {
+	addr string
+	data manufData
+}
+
+func startPublisher(client mqtt.Client) {
+	const topicPrefix = "/test/"
+
+	for {
+		adv := <-advertisingChannel
+		data := adv.data
+		log.Println("Publishing adv data", adv)
+		ts := time.Now().Unix()
+		payload := fmt.Sprintf("%d,0,%d,%d", ts, data.Voltage, data.Counter)
+		tkn := client.Publish(topicPrefix+adv.addr, 1, false, payload)
+		if tkn.WaitTimeout(15*time.Second) && tkn.Error() != nil {
+			log.Println(tkn.Error())
+		}
+
+		payload = fmt.Sprintf("%d,1,%.2f,%d", ts, data.tempToFloat(), data.Counter)
+		tkn = client.Publish(topicPrefix+adv.addr, 1, false, payload)
+		if tkn.WaitTimeout(15*time.Second) && tkn.Error() != nil {
+			log.Println(tkn.Error())
+		}
+	}
+}
+
 func advHandler(a ble.Advertisement) {
-	addr := a.Addr().String()
 	var data manufData
 	buf := bytes.NewReader(a.ManufacturerData())
-	binary.Read(buf, binary.LittleEndian, &data)
+	if err := binary.Read(buf, binary.LittleEndian, &data); err != nil {
+		log.Println("Error parsing data:", err.Error())
+		return
+	}
 
+	addr := a.Addr().String()
 	count, present := lastCount[addr]
 	if present && count == data.Counter {
 		return
 	}
 	lastCount[addr] = data.Counter
 
-	fmt.Printf("[%s] N %3d:", a.Addr(), a.RSSI())
-	fmt.Printf(" Name: %s", a.LocalName())
-	fmt.Printf(" MD: 0x%X ", a.ManufacturerData())
-	fmt.Printf("\n")
+	log.Printf("[%s] N %3d: Name: %s MD: 0x%X",
+		a.Addr(), a.RSSI(), a.LocalName(), a.ManufacturerData())
+	log.Printf("Temperature: %.2f, Voltage: %d, Count: %d\n",
+		data.tempToFloat(), data.Voltage, data.Counter)
 
-	ts := time.Now().Unix()
-	temp := float64(data.Temperature) / 1000.0
-	fmt.Printf("[%d] Temperature: %.2f, Voltage: %d, Count: %d\n",
-		ts, temp, data.Voltage, data.Counter)
-
-	payload := fmt.Sprintf("%d,0,%d,%d", ts, data.Voltage, data.Counter)
-	token := client.Publish(topicPrefix+addr, 1, false, payload)
-	if token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-	}
-
-	payload = fmt.Sprintf("%d,1,%.2f,%d", ts, temp, data.Counter)
-	token = client.Publish(topicPrefix+addr, 1, false, payload)
-	if token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-	}
+	advertisingChannel <- parsedAdv{addr, data}
 }
 
 func advFilter(a ble.Advertisement) bool {
 	return a.LocalName() == "BLETempSensor"
 }
 
-func newDevice(opts ...ble.Option) (d ble.Device, err error) {
-	return linux.NewDevice(opts...)
-}
-
 func main() {
-	server := flag.String("server", "tcp://127.0.0.1:1883", "The full URL of the MQTT server to connect to")
+	server := flag.String("server", "tcp://127.0.0.1:1883",
+		"The full URL of the MQTT server to connect to")
 	flag.Parse()
 
 	connOpts := mqtt.NewClientOptions().AddBroker(*server)
-	client = mqtt.NewClient(connOpts)
+	client := mqtt.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
+		log.Println(token.Error())
 		return
 	}
-	fmt.Println("Connected to broker")
+	log.Println("Connected to broker")
+	go startPublisher(client)
 
-	d, err := newDevice()
+	d, err := linux.NewDevice()
 	if err != nil {
 		log.Fatalf("can't new device : %s", err)
 	}
 	ble.SetDefaultDevice(d)
 
-	fmt.Println("Scanning...")
-	for {
-		ctx := context.Background()
+	log.Println("Scanning...")
+	ctx := context.Background()
 
-		err = ble.Scan(ctx, true, advHandler, advFilter)
-		if err != nil {
-			log.Fatalf(err.Error())
-		}
+	err = ble.Scan(ctx, true, advHandler, advFilter)
+	if err != nil {
+		log.Fatalf(err.Error())
 	}
 }
