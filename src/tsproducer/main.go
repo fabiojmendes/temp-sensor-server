@@ -21,7 +21,7 @@ var advertisingChannel = make(chan parsedAdv, 1024)
 
 type manufData struct {
 	ID          uint16
-	Temperature uint16
+	Temperature int16
 	Voltage     uint16
 	Reserved    uint8
 	Counter     uint8
@@ -37,7 +37,7 @@ type parsedAdv struct {
 }
 
 func startPublisher(client mqtt.Client) {
-	const topicPrefix = "/test/"
+	const topicPrefix = "/sensors/"
 
 	for {
 		adv := <-advertisingChannel
