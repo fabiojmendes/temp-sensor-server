@@ -50,6 +50,7 @@ func handleMessage(client mqtt.Client, msg mqtt.Message) {
 
 	line := fmt.Sprintf("%s,sender=%s,name=%s,boot=%s value=%s %s",
 		types[typ], sender, name, count, val, ts)
+
 	influxAPI.WriteRecord(line)
 }
 
@@ -59,6 +60,10 @@ func main() {
 
 	mqttServer := flag.String("mqtt", "tcp://127.0.0.1:1883",
 		"The full URL of the MQTT server to connect to")
+	mqttUser := flag.String("mqtt-user", "",
+		"MQTT Server Username")
+	mqttPass := flag.String("mqtt-pass", "",
+		"MQTT Server Password")
 	mqttCleanSession := flag.Bool("mqtt-clean", false,
 		"Use a clean session for this consumer")
 	influxServer := flag.String("influx", "http://127.0.0.1:8086",
@@ -74,10 +79,18 @@ func main() {
 	})
 	defer redisClient.Close()
 
+	opts := influxdb2.DefaultOptions()
+	opts.WriteOptions().SetPrecision(time.Second)
+	influx := influxdb2.NewClientWithOptions(*influxServer, "", opts)
+	defer influx.Close()
+	influxAPI = influx.WriteAPI("", "sensor_data")
+
 	connOpts := mqtt.NewClientOptions().
 		AddBroker(*mqttServer).
-		SetClientID("tsconsumer").
-		SetCleanSession(*mqttCleanSession)
+		SetCleanSession(*mqttCleanSession).
+		SetClientID(*mqttUser).
+		SetUsername(*mqttUser).
+		SetPassword(*mqttPass)
 	client := mqtt.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		log.Fatal(token.Error())
@@ -90,12 +103,6 @@ func main() {
 			log.Fatal(token.Error())
 		}
 	}
-
-	opts := influxdb2.DefaultOptions()
-	opts.WriteOptions().SetPrecision(time.Second)
-	influx := influxdb2.NewClientWithOptions(*influxServer, "", opts)
-	defer influx.Close()
-	influxAPI = influx.WriteAPI("", "sensor_data")
 
 	<-waitSignal
 	log.Println("Exiting...")
