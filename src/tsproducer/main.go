@@ -39,8 +39,7 @@ type parsedAdv struct {
 func startPublisher(client mqtt.Client) {
 	const topicPrefix = "/sensors/"
 
-	for {
-		adv := <-advertisingChannel
+	for adv := range advertisingChannel {
 		data := adv.data
 		log.Println("Publishing adv data", adv)
 		ts := time.Now().Unix()
