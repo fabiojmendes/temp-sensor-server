@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/go-ble/ble"
@@ -87,14 +88,14 @@ func advFilter(a ble.Advertisement) bool {
 func main() {
 	server := flag.String("server", "tcp://127.0.0.1:1883",
 		"The full URL of the MQTT server to connect to")
-	username := flag.String("username", "", "Username")
-	password := flag.String("password", "", "Password")
+	username := os.Getenv("USERNAME")
+	password := os.Getenv("PASSWORD")
 	flag.Parse()
 
 	connOpts := mqtt.NewClientOptions().
 		AddBroker(*server).
-		SetUsername(*username).
-		SetPassword(*password)
+		SetUsername(username).
+		SetPassword(password)
 
 	client := mqtt.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {

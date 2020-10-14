@@ -60,10 +60,6 @@ func main() {
 
 	mqttServer := flag.String("mqtt", "tcp://127.0.0.1:1883",
 		"The full URL of the MQTT server to connect to")
-	mqttUser := flag.String("mqtt-user", "",
-		"MQTT Server Username")
-	mqttPass := flag.String("mqtt-pass", "",
-		"MQTT Server Password")
 	mqttCleanSession := flag.Bool("mqtt-clean", false,
 		"Use a clean session for this consumer")
 	influxServer := flag.String("influx", "http://127.0.0.1:8086",
@@ -71,6 +67,9 @@ func main() {
 	redisServer := flag.String("redis", "localhost:6379",
 		"The full URL of the InfluxDB server to connect to")
 	flag.Parse()
+
+	mqttUser := os.Getenv("MQTT_USERNAME")
+	mqttPass := os.Getenv("MQTT_PASSWORD")
 
 	redisClient = redis.NewClient(&redis.Options{
 		Addr:     *redisServer,
@@ -88,9 +87,9 @@ func main() {
 	connOpts := mqtt.NewClientOptions().
 		AddBroker(*mqttServer).
 		SetCleanSession(*mqttCleanSession).
-		SetClientID(*mqttUser).
-		SetUsername(*mqttUser).
-		SetPassword(*mqttPass)
+		SetClientID(mqttUser).
+		SetUsername(mqttUser).
+		SetPassword(mqttPass)
 	client := mqtt.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		log.Fatal(token.Error())
