@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -79,9 +80,17 @@ func main() {
 	defer redisClient.Close()
 
 	opts := influxdb2.DefaultOptions()
-	opts.WriteOptions().SetPrecision(time.Second)
+	opts.WriteOptions().
+		SetPrecision(time.Second)
 	influx := influxdb2.NewClientWithOptions(*influxServer, "", opts)
 	defer influx.Close()
+	log.Println("Checking for influxdb availability...")
+	influxReady, err := influx.Ready(context.Background())
+	if !influxReady || err != nil {
+		log.Fatal("InfluxDB is not ready! ", err)
+	}
+	log.Printf("Influx is ready? %v\n", influxReady)
+
 	influxAPI = influx.WriteAPI("", "sensor_data")
 
 	connOpts := mqtt.NewClientOptions().
@@ -95,7 +104,7 @@ func main() {
 		log.Fatal(token.Error())
 	}
 	defer client.Disconnect(1000)
-	log.Println("Connected to broker")
+	log.Println("Connected to the mqtt broker")
 
 	if token := client.Subscribe("/sensors/#", 1, handleMessage); token.Wait() {
 		if token.Error() != nil {
