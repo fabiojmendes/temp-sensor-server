@@ -99,15 +99,14 @@ func main() {
 
 	client := mqtt.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		log.Println(token.Error())
-		return
+		log.Fatal("Error connecting to the broker", token.Error())
 	}
 	log.Println("Connected to broker")
 	go startPublisher(client)
 
 	d, err := linux.NewDevice()
 	if err != nil {
-		log.Fatalf("can't new device : %s", err)
+		log.Fatal("Can't create a new device", err)
 	}
 	ble.SetDefaultDevice(d)
 
@@ -116,6 +115,6 @@ func main() {
 
 	err = ble.Scan(ctx, true, advHandler, advFilter)
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal("Error during the BLE Scan", err.Error())
 	}
 }
