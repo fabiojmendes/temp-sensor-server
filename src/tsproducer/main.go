@@ -23,13 +23,16 @@ var advertisingChannel = make(chan parsedAdv, 1024)
 type manufData struct {
 	ID          uint16
 	Temperature int16
-	Voltage     uint16
-	Reserved    uint8
+	Voltage     int16
+	Version     uint8
 	Counter     uint8
 }
 
 func (d *manufData) tempToFloat() float64 {
-	return float64(d.Temperature) / 1000.0
+	if d.Version == 0 {
+		return float64(d.Temperature) / 1000.0
+	}
+	return float64(d.Temperature) / 100.0
 }
 
 type parsedAdv struct {
