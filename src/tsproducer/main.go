@@ -6,7 +6,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
+	"math"
 	"os"
 	"time"
 
@@ -16,6 +18,8 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/fabiojmendes/temp-sensor-scanner/src/tslib"
 )
+
+const noReading = math.MinInt16
 
 var lastCount = make(map[string]uint8)
 
@@ -29,6 +33,28 @@ type manufData struct {
 	Voltage     int16
 	Version     uint8
 	Counter     uint8
+}
+
+func (d *manufData) convertTemperature() *float64 {
+	if d.Temperature == noReading {
+		return nil
+	}
+
+	t := float64(d.Temperature)
+	if d.Version == 1 {
+		t /= 100.0
+	} else {
+		t /= 1000.0
+	}
+	return &t
+}
+
+func (d *manufData) convertVoltage() *float64 {
+	if d.Voltage == noReading {
+		return nil
+	}
+	v := float64(d.Voltage)
+	return &v
 }
 
 type parsedAdv struct {
@@ -50,34 +76,23 @@ func tokenHandler() {
 	}
 }
 
-func startPublisher(client mqtt.Client) {
-	const topic = "/sensor/json"
-
+func startPublisher(client mqtt.Client, topic string) {
 	for a := range advertisingChannel {
-		log.Println("Publishing adv data", a)
 
-		volt := tslib.Metric{
-			Addr:      a.Addr,
-			RSSI:      a.RSSI,
-			Timestamp: a.Timestamp,
-			Version:   a.Version,
-			Counter:   a.Counter,
-			Type:      "voltage",
-			Value:     a.Voltage,
+		metric := tslib.Metric{
+			Addr:        a.Addr,
+			RSSI:        a.RSSI,
+			Timestamp:   a.Timestamp,
+			Counter:     a.Counter,
+			Voltage:     a.convertVoltage(),
+			Temperature: a.convertTemperature(),
 		}
-		payload, _ := json.Marshal(volt)
-		tokenChannel <- client.Publish(topic, 1, false, payload)
-
-		temp := tslib.Metric{
-			Addr:      a.Addr,
-			RSSI:      a.RSSI,
-			Timestamp: a.Timestamp,
-			Version:   a.Version,
-			Counter:   a.Counter,
-			Type:      "temperature",
-			Value:     a.Temperature,
+		payload, err := json.Marshal(metric)
+		if err != nil {
+			log.Println("Error converting json", err)
+			continue
 		}
-		payload, _ = json.Marshal(temp)
+		log.Printf("[%s] Publishing metric %v", a.Addr, string(payload))
 		tokenChannel <- client.Publish(topic, 1, false, payload)
 	}
 }
@@ -86,7 +101,7 @@ func advHandler(a ble.Advertisement) {
 	var data manufData
 	buf := bytes.NewReader(a.ManufacturerData())
 	if err := binary.Read(buf, binary.LittleEndian, &data); err != nil {
-		log.Println("Error parsing data:", err.Error())
+		log.Println("Error parsing binary data:", err.Error())
 		return
 	}
 
@@ -97,10 +112,10 @@ func advHandler(a ble.Advertisement) {
 	}
 	lastCount[addr] = data.Counter
 
-	log.Printf("[%s] N %3d: Name: %s MD: 0x%X",
+	log.Printf("[%s] N %3d: Name: %s MD: %#x",
 		a.Addr(), a.RSSI(), a.LocalName(), a.ManufacturerData())
-	log.Printf("Temperature: %d, Voltage: %d, Count: %d\n",
-		data.Temperature, data.Voltage, data.Counter)
+	log.Printf("[%s] RAW: Temperature: %d, Voltage: %d, Count: %d\n",
+		a.Addr(), data.Temperature, data.Voltage, data.Counter)
 
 	advertisingChannel <- parsedAdv{
 		addr,
@@ -117,9 +132,16 @@ func advFilter(a ble.Advertisement) bool {
 func main() {
 	server := flag.String("server", "tcp://127.0.0.1:1883",
 		"The full URL of the MQTT server to connect to")
+	topic := flag.String("topic", "", "Name of the topic to send data to")
 	username := os.Getenv("MQTT_USERNAME")
 	password := os.Getenv("MQTT_PASSWORD")
 	flag.Parse()
+
+	if *topic == "" {
+		fmt.Fprintln(os.Stderr, "Error: A destination topic is required")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
 
 	connOpts := mqtt.NewClientOptions().
 		AddBroker(*server).
@@ -128,16 +150,16 @@ func main() {
 
 	client := mqtt.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatal("Error connecting to the broker", token.Error())
+		log.Fatalln("Error connecting to the broker:", token.Error())
 	}
 	log.Println("Connected to broker")
 
 	go tokenHandler()
-	go startPublisher(client)
+	go startPublisher(client, *topic)
 
 	d, err := linux.NewDevice()
 	if err != nil {
-		log.Fatal("Can't create new device: ", err)
+		log.Fatalln("Can't create new device:", err)
 	}
 	ble.SetDefaultDevice(d)
 
@@ -146,6 +168,6 @@ func main() {
 
 	err = ble.Scan(ctx, true, advHandler, advFilter)
 	if err != nil {
-		log.Fatal("Error during the BLE Scan: ", err.Error())
+		log.Fatalln("Error during the BLE Scan:", err.Error())
 	}
 }

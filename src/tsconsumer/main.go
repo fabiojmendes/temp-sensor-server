@@ -39,18 +39,30 @@ func lookupName(sender string) string {
 func handleMessage(client mqtt.Client, msg mqtt.Message) {
 	log.Println("Message:", msg.Topic(), string(msg.Payload()))
 	var metric tslib.Metric
-	json.Unmarshal(msg.Payload(), &metric)
-	value, err := metric.ParseValue()
-	if err != nil {
-		log.Println("Error parsing value:", err)
+	if err := json.Unmarshal(msg.Payload(), &metric); err != nil {
+		log.Println("Error parsing json", err)
 		return
 	}
 	name := lookupName(metric.Addr)
 
-	line := fmt.Sprintf("%s,sender=%s,name=%s,boot=%d value=%.2f %d",
-		metric.Type, metric.Addr, name, metric.Counter, value, metric.Timestamp)
+	if metric.Temperature != nil {
+		temp := fmt.Sprintf("%s,sender=%s,name=%s,boot=%d value=%.2f %d",
+			"temperature", metric.Addr, name, metric.Counter, *metric.Temperature, metric.Timestamp)
 
-	influxAPI.WriteRecord(line)
+		influxAPI.WriteRecord(temp)
+	}
+
+	if metric.Voltage != nil {
+		volt := fmt.Sprintf("%s,sender=%s,name=%s,boot=%d value=%.2f %d",
+			"voltage", metric.Addr, name, metric.Counter, *metric.Voltage, metric.Timestamp)
+
+		influxAPI.WriteRecord(volt)
+	}
+
+	rssi := fmt.Sprintf("%s,sender=%s,name=%s,boot=%d value=%d %d",
+		"rssi", metric.Addr, name, metric.Counter, metric.RSSI, metric.Timestamp)
+
+	influxAPI.WriteRecord(rssi)
 }
 
 func main() {
@@ -59,6 +71,8 @@ func main() {
 
 	mqttServer := flag.String("mqtt", "tcp://127.0.0.1:1883",
 		"The full URL of the MQTT server to connect to")
+	mqttTopic := flag.String("topic", "",
+		"MQTT Topic to subscribe")
 	mqttCleanSession := flag.Bool("mqtt-clean", false,
 		"Use a clean session for this consumer")
 	influxServer := flag.String("influx", "http://127.0.0.1:8086",
@@ -66,6 +80,12 @@ func main() {
 	redisServer := flag.String("redis", "localhost:6379",
 		"The full URL of the InfluxDB server to connect to")
 	flag.Parse()
+
+	if *mqttTopic == "" {
+		fmt.Fprintln(os.Stderr, "Error: A topic to subscribe is required")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
 
 	mqttUser := os.Getenv("MQTT_USERNAME")
 	mqttPass := os.Getenv("MQTT_PASSWORD")
@@ -104,7 +124,7 @@ func main() {
 	defer client.Disconnect(1000)
 	log.Println("Connected to the mqtt broker")
 
-	if token := client.Subscribe("/sensor/json", 1, handleMessage); token.Wait() {
+	if token := client.Subscribe(*mqttTopic, 1, handleMessage); token.Wait() {
 		if token.Error() != nil {
 			log.Fatal(token.Error())
 		}
