@@ -43,9 +43,7 @@ func tokenHandler() {
 		if tkn.WaitTimeout(15 * time.Second) {
 			if tkn.Error() != nil {
 				log.Println(tkn.Error())
-				continue
 			}
-			log.Println("Token sucessful")
 		} else {
 			log.Println("Token timed out")
 		}
