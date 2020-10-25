@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path"
 	"strings"
 	"syscall"
 	"time"
@@ -23,12 +22,6 @@ import (
 )
 
 const keyPrefix = "device_name.mac."
-
-var types = map[string]string{
-	"0": "voltage",
-	"1": "temperature",
-	"2": "humidity",
-}
 
 var redisClient *redis.Client
 
@@ -45,21 +38,6 @@ func lookupName(sender string) string {
 
 func handleMessage(client mqtt.Client, msg mqtt.Message) {
 	log.Println("Message:", msg.Topic(), string(msg.Payload()))
-	topic := msg.Topic()
-	sender := path.Base(topic)
-	name := lookupName(sender)
-	payload := string(msg.Payload())
-	p := strings.Split(payload, ",")
-	ts, typ, val, count := p[0], p[1], p[2], p[3]
-
-	line := fmt.Sprintf("%s,sender=%s,name=%s,boot=%s value=%s %s",
-		types[typ], sender, name, count, val, ts)
-
-	influxAPI.WriteRecord(line)
-}
-
-func handleJSONMessage(client mqtt.Client, msg mqtt.Message) {
-	log.Println("Message:", msg.Topic(), string(msg.Payload()))
 	var metric tslib.Metric
 	json.Unmarshal(msg.Payload(), &metric)
 	value, err := metric.ParseValue()
@@ -73,7 +51,6 @@ func handleJSONMessage(client mqtt.Client, msg mqtt.Message) {
 		metric.Type, metric.Addr, name, metric.Counter, value, metric.Timestamp)
 
 	influxAPI.WriteRecord(line)
-
 }
 
 func main() {
@@ -127,13 +104,7 @@ func main() {
 	defer client.Disconnect(1000)
 	log.Println("Connected to the mqtt broker")
 
-	if token := client.Subscribe("/sensors/#", 1, handleMessage); token.Wait() {
-		if token.Error() != nil {
-			log.Fatal(token.Error())
-		}
-	}
-
-	if token := client.Subscribe("/sensor/json", 1, handleJSONMessage); token.Wait() {
+	if token := client.Subscribe("/sensor/json", 1, handleMessage); token.Wait() {
 		if token.Error() != nil {
 			log.Fatal(token.Error())
 		}
