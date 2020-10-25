@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -14,11 +14,14 @@ import (
 	"github.com/go-ble/ble/linux"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/fabiojmendes/temp-sensor-scanner/src/tslib"
 )
 
 var lastCount = make(map[string]uint8)
 
 var advertisingChannel = make(chan parsedAdv, 1024)
+
+var tokenChannel = make(chan mqtt.Token, 1024)
 
 type manufData struct {
 	ID          uint16
@@ -28,36 +31,56 @@ type manufData struct {
 	Counter     uint8
 }
 
-func (d *manufData) tempToFloat() float64 {
-	if d.Version == 0 {
-		return float64(d.Temperature) / 1000.0
-	}
-	return float64(d.Temperature) / 100.0
+type parsedAdv struct {
+	Addr      string
+	RSSI      int
+	Timestamp int64
+	manufData
 }
 
-type parsedAdv struct {
-	addr string
-	data manufData
+func tokenHandler() {
+	for tkn := range tokenChannel {
+		if tkn.WaitTimeout(15 * time.Second) {
+			if tkn.Error() != nil {
+				log.Println(tkn.Error())
+				continue
+			}
+			log.Println("Token sucessful")
+		} else {
+			log.Println("Token timed out")
+		}
+	}
 }
 
 func startPublisher(client mqtt.Client) {
-	const topicPrefix = "/sensors/"
+	const topic = "/sensor/json"
 
-	for adv := range advertisingChannel {
-		data := adv.data
-		log.Println("Publishing adv data", adv)
-		ts := time.Now().Unix()
-		payload := fmt.Sprintf("%d,0,%d,%d", ts, data.Voltage, data.Counter)
-		tkn := client.Publish(topicPrefix+adv.addr, 1, false, payload)
-		if tkn.WaitTimeout(15*time.Second) && tkn.Error() != nil {
-			log.Println(tkn.Error())
-		}
+	for a := range advertisingChannel {
+		log.Println("Publishing adv data", a)
 
-		payload = fmt.Sprintf("%d,1,%.2f,%d", ts, data.tempToFloat(), data.Counter)
-		tkn = client.Publish(topicPrefix+adv.addr, 1, false, payload)
-		if tkn.WaitTimeout(15*time.Second) && tkn.Error() != nil {
-			log.Println(tkn.Error())
+		volt := tslib.Metric{
+			Addr:      a.Addr,
+			RSSI:      a.RSSI,
+			Timestamp: a.Timestamp,
+			Version:   a.Version,
+			Counter:   a.Counter,
+			Type:      "voltage",
+			Value:     a.Voltage,
 		}
+		payload, _ := json.Marshal(volt)
+		tokenChannel <- client.Publish(topic, 1, false, payload)
+
+		temp := tslib.Metric{
+			Addr:      a.Addr,
+			RSSI:      a.RSSI,
+			Timestamp: a.Timestamp,
+			Version:   a.Version,
+			Counter:   a.Counter,
+			Type:      "temperature",
+			Value:     a.Temperature,
+		}
+		payload, _ = json.Marshal(temp)
+		tokenChannel <- client.Publish(topic, 1, false, payload)
 	}
 }
 
@@ -78,10 +101,15 @@ func advHandler(a ble.Advertisement) {
 
 	log.Printf("[%s] N %3d: Name: %s MD: 0x%X",
 		a.Addr(), a.RSSI(), a.LocalName(), a.ManufacturerData())
-	log.Printf("Temperature: %.2f, Voltage: %d, Count: %d\n",
-		data.tempToFloat(), data.Voltage, data.Counter)
+	log.Printf("Temperature: %d, Voltage: %d, Count: %d\n",
+		data.Temperature, data.Voltage, data.Counter)
 
-	advertisingChannel <- parsedAdv{addr, data}
+	advertisingChannel <- parsedAdv{
+		addr,
+		a.RSSI(),
+		time.Now().Unix(),
+		data,
+	}
 }
 
 func advFilter(a ble.Advertisement) bool {
@@ -91,8 +119,8 @@ func advFilter(a ble.Advertisement) bool {
 func main() {
 	server := flag.String("server", "tcp://127.0.0.1:1883",
 		"The full URL of the MQTT server to connect to")
-	username := os.Getenv("USERNAME")
-	password := os.Getenv("PASSWORD")
+	username := os.Getenv("MQTT_USERNAME")
+	password := os.Getenv("MQTT_PASSWORD")
 	flag.Parse()
 
 	connOpts := mqtt.NewClientOptions().
@@ -105,11 +133,13 @@ func main() {
 		log.Fatal("Error connecting to the broker", token.Error())
 	}
 	log.Println("Connected to broker")
+
+	go tokenHandler()
 	go startPublisher(client)
 
 	d, err := linux.NewDevice()
 	if err != nil {
-		log.Fatal("Can't create a new device", err)
+		log.Fatal("Can't create new device: ", err)
 	}
 	ble.SetDefaultDevice(d)
 
@@ -118,6 +148,6 @@ func main() {
 
 	err = ble.Scan(ctx, true, advHandler, advFilter)
 	if err != nil {
-		log.Fatal("Error during the BLE Scan", err.Error())
+		log.Fatal("Error during the BLE Scan: ", err.Error())
 	}
 }

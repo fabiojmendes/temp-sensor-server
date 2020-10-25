@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -12,11 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-redis/redis"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	influxdb2Api "github.com/influxdata/influxdb-client-go/v2/api"
+
+	"github.com/fabiojmendes/temp-sensor-scanner/src/tslib"
 )
 
 const keyPrefix = "device_name.mac."
@@ -53,6 +56,24 @@ func handleMessage(client mqtt.Client, msg mqtt.Message) {
 		types[typ], sender, name, count, val, ts)
 
 	influxAPI.WriteRecord(line)
+}
+
+func handleJSONMessage(client mqtt.Client, msg mqtt.Message) {
+	log.Println("Message:", msg.Topic(), string(msg.Payload()))
+	var metric tslib.Metric
+	json.Unmarshal(msg.Payload(), &metric)
+	value, err := metric.ParseValue()
+	if err != nil {
+		log.Println("Error parsing value:", err)
+		return
+	}
+	name := lookupName(metric.Addr)
+
+	line := fmt.Sprintf("%s,sender=%s,name=%s,boot=%d value=%.2f %d",
+		metric.Type, metric.Addr, name, metric.Counter, value, metric.Timestamp)
+
+	influxAPI.WriteRecord(line)
+
 }
 
 func main() {
@@ -112,6 +133,11 @@ func main() {
 		}
 	}
 
+	if token := client.Subscribe("/sensor/json", 1, handleJSONMessage); token.Wait() {
+		if token.Error() != nil {
+			log.Fatal(token.Error())
+		}
+	}
 	<-waitSignal
 	log.Println("Exiting...")
 }
