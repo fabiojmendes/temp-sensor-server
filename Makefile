@@ -2,7 +2,9 @@ BUILD_DIR = build
 PRODUCER_OPTS = GOOS=linux GOARCH=arm GOARM=6
 CONSUMER_OPTS = GOOS=linux
 
-all: tsproducer tsconsumer
+all: build_producer build_consumer
+
+deploy: deploy_producer deploy_consumer
 
 clean:
 	rm -rf $(BUILD_DIR)/
@@ -10,18 +12,24 @@ clean:
 build_dir:
 	@mkdir -p $(BUILD_DIR)/
 
-tsproducer: build_producer deploy_producer
-
-tsconsumer: build_consumer deploy_consumer
+# Producer Targets #
 
 build_producer: build_dir
 	$(PRODUCER_OPTS) go build -o $(BUILD_DIR)/ ./src/tsproducer
 
-deploy_producer:
-	scp $(BUILD_DIR)/tsproducer zero.local:~
+deploy_producer: build_producer
+ifndef PRODUCER_HOST
+	$(error PRODUCER_HOST is not set)
+endif
+	scp $(BUILD_DIR)/tsproducer $(PRODUCER_HOST):~
+
+# Consumer Targets #
 
 build_consumer: build_dir
 	$(CONSUMER_OPTS) go build -o $(BUILD_DIR)/ ./src/tsconsumer
 
-deploy_consumer:
-	scp $(BUILD_DIR)/tsconsumer linux-desktop.local:~
+deploy_consumer: build_consumer
+ifndef CONSUMER_HOST
+	$(error CONSUMER_HOST is not set)
+endif
+	scp $(BUILD_DIR)/tsconsumer $(CONSUMER_HOST):~
