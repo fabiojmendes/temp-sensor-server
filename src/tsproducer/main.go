@@ -133,9 +133,10 @@ func main() {
 	server := flag.String("server", "tcp://127.0.0.1:1883",
 		"The full URL of the MQTT server to connect to")
 	topic := flag.String("topic", "", "Name of the topic to send data to")
+	flag.Parse()
+
 	username := os.Getenv("MQTT_USERNAME")
 	password := os.Getenv("MQTT_PASSWORD")
-	flag.Parse()
 
 	if *topic == "" {
 		fmt.Fprintln(os.Stderr, "Error: A destination topic is required")
