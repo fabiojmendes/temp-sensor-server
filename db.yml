@@ -1,0 +1,39 @@
+# Tests
+cd:27:49:08:ef:7c:
+  name: nRF52840 DK
+
+0f:5f:25:bd:f5:7d:
+  name: nRF52 Dongle
+
+ec:9d:a5:a3:37:58:
+  name: nRF52 Custom v1
+
+db:99:3f:5a:d9:5b:
+  name: nRF52832 Custom V2
+
+# LittleBee
+df:46:57:ec:55:2c:
+  name: Milk Fridge
+  type: fridge
+  customer: LittleBee
+
+# FineFood
+db:dd:1a:53:93:e3:
+  name: Chest Freezer
+  type: freezer
+  customer: FineFood
+
+ce:d2:ba:5e:bc:da:
+  name: Large Fridge
+  type: fridge
+  customer: FineFood
+
+f7:e7:a8:60:6c:18:
+  name: Large Fridge (Left)
+  type: fridge
+  customer: FineFood
+
+dc:05:6c:92:fa:2a:
+  name: Large Freezer 2
+  type: freezer
+  customer: FineFood

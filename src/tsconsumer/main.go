@@ -5,35 +5,57 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/go-redis/redis"
+	"gopkg.in/yaml.v2"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	influxdb2Api "github.com/influxdata/influxdb-client-go/v2/api"
+	"github.com/influxdata/influxdb-client-go/v2/api/write"
 
 	"github.com/fabiojmendes/temp-sensor-scanner/src/tslib"
 )
 
-const keyPrefix = "device_name.mac."
-
-var redisClient *redis.Client
-
 var influxAPI influxdb2Api.WriteAPI
 
-func lookupName(sender string) string {
-	name, err := redisClient.Get(keyPrefix + sender).Result()
+var tagData = make(map[string]map[string]string)
+
+func loadTagData(filename string) error {
+	bytes, err := ioutil.ReadFile(filename)
 	if err != nil {
-		log.Println("Key not found", err.Error())
-		return sender
+		return err
 	}
-	return strings.ReplaceAll(name, " ", "\\ ")
+	err = yaml.Unmarshal(bytes, &tagData)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func lookupTags(sender string) map[string]string {
+	tags := make(map[string]string)
+	for k, v := range tagData[sender] {
+		tags[k] = v
+	}
+	return tags
+}
+
+func createPoint(measurement string, value interface{}, ts int64, tags map[string]string) *write.Point {
+
+	p := write.NewPointWithMeasurement(measurement).
+		AddField("value", value).
+		SetTime(time.Unix(ts, 0))
+
+	for k, v := range tags {
+		p.AddTag(k, v)
+	}
+	return p
 }
 
 func handleMessage(client mqtt.Client, msg mqtt.Message) {
@@ -43,26 +65,22 @@ func handleMessage(client mqtt.Client, msg mqtt.Message) {
 		log.Println("Error parsing json", err)
 		return
 	}
-	name := lookupName(metric.Addr)
+	tags := lookupTags(metric.Addr)
+	tags["sender"] = metric.Addr
+	tags["boot"] = fmt.Sprintf("%d", metric.Counter)
 
 	if metric.Temperature != nil {
-		temp := fmt.Sprintf("%s,sender=%s,name=%s,boot=%d value=%.2f %d",
-			"temperature", metric.Addr, name, metric.Counter, *metric.Temperature, metric.Timestamp)
-
-		influxAPI.WriteRecord(temp)
+		p := createPoint("temperature", *metric.Temperature, metric.Timestamp, tags)
+		influxAPI.WritePoint(p)
 	}
 
 	if metric.Voltage != nil {
-		volt := fmt.Sprintf("%s,sender=%s,name=%s,boot=%d value=%.2f %d",
-			"voltage", metric.Addr, name, metric.Counter, *metric.Voltage, metric.Timestamp)
-
-		influxAPI.WriteRecord(volt)
+		p := createPoint("voltage", *metric.Voltage, metric.Timestamp, tags)
+		influxAPI.WritePoint(p)
 	}
 
-	rssi := fmt.Sprintf("%s,sender=%s,name=%s,boot=%d value=%d %d",
-		"rssi", metric.Addr, name, metric.Counter, metric.RSSI, metric.Timestamp)
-
-	influxAPI.WriteRecord(rssi)
+	p := createPoint("rssi", float64(metric.RSSI), metric.Timestamp, tags)
+	influxAPI.WritePoint(p)
 }
 
 func main() {
@@ -77,9 +95,12 @@ func main() {
 		"Use a clean session for this consumer")
 	influxServer := flag.String("influx", "http://127.0.0.1:8086",
 		"The full URL of the InfluxDB server to connect to")
-	redisServer := flag.String("redis", "localhost:6379",
+	tagFile := flag.String("tags", "",
 		"The full URL of the InfluxDB server to connect to")
 	flag.Parse()
+
+	mqttUser := os.Getenv("MQTT_USERNAME")
+	mqttPass := os.Getenv("MQTT_PASSWORD")
 
 	if *mqttTopic == "" {
 		fmt.Fprintln(os.Stderr, "Error: A topic to subscribe is required")
@@ -87,20 +108,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	mqttUser := os.Getenv("MQTT_USERNAME")
-	mqttPass := os.Getenv("MQTT_PASSWORD")
+	log.Println("Loading tag data")
+	err := loadTagData(*tagFile)
+	if err != nil {
+		log.Fatalln("Error loading tag file", err)
+	}
 
-	redisClient = redis.NewClient(&redis.Options{
-		Addr:     *redisServer,
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-	defer redisClient.Close()
-
-	opts := influxdb2.DefaultOptions()
-	opts.WriteOptions().
-		SetPrecision(time.Second)
-	influx := influxdb2.NewClientWithOptions(*influxServer, "", opts)
+	influx := influxdb2.NewClient(*influxServer, "")
 	defer influx.Close()
 	log.Println("Checking for influxdb availability...")
 	influxReady, err := influx.Ready(context.Background())
