@@ -26,4 +26,4 @@ jobs:
       run: go build -v -o build/ ./src/tsproducer
       
     - name: List Artifacts
-      run: ls -la build
+      run: ls -la build && file build/*
