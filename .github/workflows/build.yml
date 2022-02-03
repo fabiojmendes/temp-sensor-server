@@ -16,5 +16,14 @@ jobs:
       with:
         go-version: v1
 
+    - name: Build Consumer
+      run: go build -v -o build/ ./src/tsconsumer
+
     - name: Build Producer
-      run: go build -v -o build/ ./src/tsproducer
+      env:
+        GOARCH: arm
+        GOARM: 6
+      run: go build -v -o build/ ./src/producer
+      
+    - name: artifacts
+      run: ls -la build
