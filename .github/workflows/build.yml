@@ -1,4 +1,4 @@
-name: Go
+name: build
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
       env:
         GOARCH: arm
         GOARM: 6
-      run: go build -v -o build/ ./src/producer
+      run: go build -v -o build/ ./src/tsproducer
       
-    - name: artifacts
+    - name: List Artifacts
       run: ls -la build
