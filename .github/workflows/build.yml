@@ -27,3 +27,10 @@ jobs:
       
     - name: List Artifacts
       run: ls -la build && file build/*
+      
+    - name: Publish
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "build/*"
+        token: ${{ secrets.GITHUB_TOKEN }}
