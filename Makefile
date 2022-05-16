@@ -1,6 +1,6 @@
 BUILD_DIR = build
 PRODUCER_OPTS = GOOS=linux GOARCH=arm GOARM=6
-CONSUMER_OPTS = GOOS=linux
+CONSUMER_OPTS = GOOS=linux GOARCH=amd64
 
 all: build_producer build_consumer
 

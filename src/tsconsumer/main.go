@@ -117,7 +117,7 @@ func main() {
 	influx := influxdb2.NewClient(*influxServer, "")
 	defer influx.Close()
 	log.Println("Checking for influxdb availability...")
-	influxReady, err := influx.Ready(context.Background())
+	influxReady, err := influx.Ping(context.Background())
 	if !influxReady || err != nil {
 		log.Fatal("InfluxDB is not ready! ", err)
 	}
