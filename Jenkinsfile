@@ -3,21 +3,21 @@ pipeline {
   agent { docker { image 'golang:1.19.1-alpine' } }
   stages {
     stage('build producer') {
+      environment {
+        GOOS = 'linux'
+        GOARCH = 'arm'
+        GOARM = 6
+      }
       steps {
-        environment {
-          GOOS = 'linux'
-          GOARCH = 'arm'
-          GOARM = 6
-        }
         sh 'go build -o build/ ./src/tsproducer'
       }
     }
     stage('build consumer') {
+      environment {
+        GOOS = 'linux'
+        GOARCH = 'amd64'
+      }
       steps {
-        environment {
-          GOOS = 'linux'
-          GOARCH = 'amd64'
-        }
         sh 'go build -o build/ ./src/consumer'
       }
     }
