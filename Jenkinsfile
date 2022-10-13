@@ -2,7 +2,7 @@
 pipeline {
   agent { docker { image 'golang:1.19.1-alpine' } }
   environment {
-    GOCACHE = '/tmp/'
+    GOCACHE = '/tmp'
   }
   stages {
     stage('build producer') {
