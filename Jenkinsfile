@@ -6,8 +6,10 @@ pipeline {
   }
   stages {
     stage('check env') {
-      sh 'pwd'
-      sh 'ls -la '
+      steps {
+        sh 'pwd'
+        sh 'ls -la '
+      }
     }
     stage('build producer') {
       environment {
