@@ -18,7 +18,7 @@ pipeline {
         GOARM = 6
       }
       steps {
-        sh 'go build -o build/ src/tsproducer'
+        sh 'go build -o build/ ./src/tsproducer'
       }
     }
     stage('build consumer') {
@@ -27,7 +27,7 @@ pipeline {
         GOARCH = 'amd64'
       }
       steps {
-        sh 'go build -o build/ src/consumer'
+        sh 'go build -o build/ ./src/tsconsumer'
       }
     }
   }
