@@ -5,6 +5,12 @@ pipeline {
     GOCACHE = '/tmp/'
   }
   stages {
+    stage('check env') {
+      sh '''
+        pwd
+        ls -la
+      '''
+    }
     stage('build producer') {
       environment {
         GOOS = 'linux'
