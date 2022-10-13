@@ -2,7 +2,7 @@
 pipeline {
   agent { docker { image 'golang:1.19.1-alpine' } }
   environment {
-    GOCACHE = '/tmp'
+    GOCACHE = '/tmp/'
   }
   stages {
     stage('build producer') {
@@ -12,7 +12,7 @@ pipeline {
         GOARM = 6
       }
       steps {
-        sh 'go build -o build/ ./src/tsproducer'
+        sh 'go build -o build/ src/tsproducer'
       }
     }
     stage('build consumer') {
@@ -21,7 +21,7 @@ pipeline {
         GOARCH = 'amd64'
       }
       steps {
-        sh 'go build -o build/ ./src/consumer'
+        sh 'go build -o build/ src/consumer'
       }
     }
   }
